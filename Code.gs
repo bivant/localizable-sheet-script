@@ -223,6 +223,71 @@ function makeAndroidString(object, textIndex, options) {
   return exportString;
 }
 
+function makeAndroidXmlString(object, textIndex, options) {
+
+  var prevIdentifier = "";
+
+  var root = XmlService.createElement('resources');
+  var stringArray;
+
+  for(var i=0; i<object.length; i++) {
+
+    var o = object[i];
+    var identifier = o.identifierAndroid;
+
+    var text = o.texts[textIndex];
+
+    if (text == undefined || text == "") {
+      continue;
+    }
+
+    if(identifier == "") {
+      continue;
+    }
+
+    text = text.replace(/\n/g, "\\n");
+    text = text.replace(/&/g, "&amp;");
+    text = text.replace(/\'/g, "\\'");
+    text = text.replace(/</g, "&lt;");
+    text = text.replace(/>/g, "&gt;");
+    text = text.replace(/"/g, "\\\"");
+
+    if(identifier != prevIdentifier && prevIdentifier != "") {
+      root.addContent(stringArray);
+      stringArray = undefined
+      prevIdentifier = "";
+    }
+
+    var arrayPosition = identifier.indexOf("[]");
+    if(arrayPosition > 0) {
+      var arrayIdentifier = identifier.substr(0, arrayPosition)
+
+      if(identifier != prevIdentifier) {
+        stringArray = XmlService.createElement('string-array').setAttribute('name', arrayIdentifier);
+      }
+      var item = XmlService.createElement('item').setText(text);
+      stringArray.addContent(item)
+
+      prevIdentifier = identifier;
+
+    } else {
+      var item = XmlService.createElement('string').setAttribute('name', identifier).setText(text);
+
+      root.addContent(item)
+    }
+  }
+
+  if(prevIdentifier != "") {
+    root.addContent(stringArray);
+  }
+
+  var document = XmlService.createDocument(root);
+
+  var xml = XmlService.getPrettyFormat().setEncoding('UTF-8').format(document);
+
+  return xml;
+}
+
 /*
    Creates the Localizable.strings file and a Localizable enum for iOS.
 */
