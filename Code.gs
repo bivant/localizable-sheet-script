@@ -215,7 +215,9 @@ function makeAndroidString(object, textIndex, options) {
       exportString += "\t"+'<string name="'+identifier+'">'+text+'</string>' + "\n";
     }
   }
-  
+  if(prevIdentifier != "") {
+    exportString += "\t" + '</string-array>' + "\n";
+  }
   exportString += "</resources>";
   
   return exportString;
