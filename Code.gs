@@ -79,13 +79,14 @@ function exportSheet(e) {
   
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getActiveSheet();
-  var rowsData = getRowsData_(sheet, getExportOptions(e));
+  var options = getExportOptions(e)
+  var rowsData = getRowsData_(sheet, options);
 
   var strings = [];
   for (var i = 0; i < NUMBER_OF_LANGUAGES; i++) {
-    strings.push(makeString(rowsData, i, getExportOptions(e)));
+    strings = strings.concat(makeString(rowsData, i, options));
   }
-  return displayTexts_(strings);
+  return displayTexts_(strings, options);
 }
 
 function getExportOptions(e) {
@@ -133,12 +134,21 @@ function makeTextBox(id, content) {
   return textArea;
 }
 
-function displayTexts_(texts) {
+function displayTexts_(texts, options) {
   
-  var app = HtmlService.createHtmlOutput().setWidth(800).setHeight(600);
+  var app = HtmlService.createHtmlOutput().setWidth(1200).setHeight(800);
+  
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getActiveSheet();
+  var headersRange = sheet.getRange(HEADER_ROW_POSITION, FIRST_COLUMN_POSITION + 2, 1, sheet.getMaxColumns());
+  var headers = headersRange.getValues()[0];
 
-  for (var i = 0; i < texts.length; i++) {
-     app.append(makeTextBox("export_" + i, texts[i]))
+  for (var i = 0, j = 0; i < texts.length; i++, j++) {
+    if(options.language == LANGUAGE_IOS) {
+      app.append(makeTextBox("export_" + i, headers[j] + " plist", texts[i]))
+      i++;
+    }
+    app.append(makeTextBox("export_" + i, headers[j], texts[i]))
   }
   
   SpreadsheetApp.getUi().showModalDialog(app, "Translations");
@@ -229,7 +239,8 @@ function makeAndroidXmlString(object, textIndex, options) {
 
   var root = XmlService.createElement('resources');
   var stringArray;
-
+  var pluralArray = undefined;
+  
   for(var i=0; i<object.length; i++) {
 
     var o = object[i];
@@ -245,35 +256,54 @@ function makeAndroidXmlString(object, textIndex, options) {
       continue;
     }
 
-    text = text.replace(/\n/g, "\\n");
-    text = text.replace(/&/g, "&amp;");
-    text = text.replace(/\'/g, "\\'");
-    text = text.replace(/</g, "&lt;");
-    text = text.replace(/>/g, "&gt;");
-    text = text.replace(/"/g, "\\\"");
-
-    if(identifier != prevIdentifier && prevIdentifier != "") {
-      root.addContent(stringArray);
-      stringArray = undefined
-      prevIdentifier = "";
+    if(typeof text === 'string') {
+      text = text.replace(/\n/g, "\\n");
+      text = text.replace(/&/g, "&amp;");
+      text = text.replace(/\'/g, "\\'");
+      text = text.replace(/</g, "&lt;");
+      text = text.replace(/>/g, "&gt;");
+      text = text.replace(/"/g, "\\\"");
     }
-
-    var arrayPosition = identifier.indexOf("[]");
-    if(arrayPosition > 0) {
-      var arrayIdentifier = identifier.substr(0, arrayPosition)
-
-      if(identifier != prevIdentifier) {
-        stringArray = XmlService.createElement('string-array').setAttribute('name', arrayIdentifier);
+  
+    if(pluralArray == undefined) {
+      
+      if(identifier != prevIdentifier && prevIdentifier != "") {
+        root.addContent(stringArray);
+        stringArray = undefined
+        prevIdentifier = "";
       }
-      var item = XmlService.createElement('item').setText(text);
-      stringArray.addContent(item)
-
-      prevIdentifier = identifier;
-
+      
+      var arrayPosition = identifier.indexOf("[]");
+      if(arrayPosition > 0) {
+        var arrayIdentifier = identifier.substr(0, arrayPosition);
+        
+        if(identifier != prevIdentifier) {
+          stringArray = XmlService.createElement('string-array').setAttribute('name', arrayIdentifier);
+        }
+        var item = XmlService.createElement('item').setText(text);
+        stringArray.addContent(item)
+        
+        prevIdentifier = identifier;
+        
+      } else {
+        arrayPosition = identifier.indexOf("[p]");
+        if(arrayPosition > 0) {
+          var arrayIdentifier = identifier.substr(0, arrayPosition)
+          pluralArray = XmlService.createElement('plurals').setAttribute('name', arrayIdentifier);
+        } else {
+          var item = XmlService.createElement('string').setAttribute('name', identifier).setText(text);
+          
+          root.addContent(item)
+        }
+      }
     } else {
-      var item = XmlService.createElement('string').setAttribute('name', identifier).setText(text);
-
-      root.addContent(item)
+      var item = XmlService.createElement('item').setAttribute('quantity', identifier).setText(text);
+      pluralArray.addContent(item)
+      if(identifier == "other") {
+          root.addContent(pluralArray);
+          pluralArray = undefined
+          prevIdentifier = "";
+      }
     }
   }
 
@@ -324,27 +354,118 @@ function makeIosString(object, textIndex, options) {
     exportString += "// MARK: - Strings\n\n";
   }
   
+  var plist = XmlService.createElement('plist').setAttribute('version', "1.0");
+  var root = XmlService.createElement('dict');
+  var stringArray, paramArray;
+  
   for(var i=0; i<object.length; i++) {
     var o = object[i];
     var identifier = o.identifierIos;
     var text = o.texts[textIndex];
     
-    if (text == undefined || text == "") {
-      continue;
-    }
-    
+//    exportString += '"DEBUG3=' + identifier + '" = "' + text + "\";\n";
+
     if(identifier == "") {
       continue;
     }
     
+    if (text == undefined || text == "") {
+      if (stringArray == undefined) {
+        continue;
+      } else {
+        var arrayPosition = identifier.indexOf("[]")
+//        exportString += '"DEBUG=' + identifier + '" = "' + text + '\";arrayPosition ' + arrayPosition + "\n";
+        if(arrayPosition > 0) {
+          var formatString = identifier.substr(0, arrayPosition)
+          var arrayIdentifier = identifier.substr(arrayPosition + 2)
+          
+//          exportString += 'DEBUG arrayIdentifier = ' + arrayIdentifier + "\n";
+          
+          var key = XmlService.createElement('key').setText(arrayIdentifier);
+          stringArray.addContent(key)
+          
+          paramArray = XmlService.createElement('dict');
+          
+          key = XmlService.createElement('key').setText("NSStringFormatSpecTypeKey");
+          paramArray.addContent(key)
+          var string = XmlService.createElement('string').setText("NSStringPluralRuleType");
+          paramArray.addContent(string);
+          key = XmlService.createElement('key').setText("NSStringFormatValueTypeKey");
+          paramArray.addContent(key)
+          string = XmlService.createElement('string').setText(formatString);
+          paramArray.addContent(string);
+          continue;
+        } else {
+//        exportString += '"DEBUG2=' + identifier + '" = "' + text + "\";\n";
+         //fallthrough 
+        }
+      }
+    }
+        
     if(typeof text === 'string') {
       text = text.replace(/"/g, "\\\"");
     }
+    
+    if(paramArray != undefined) {
+      var key = XmlService.createElement('key').setText(identifier);
+      paramArray.addContent(key)
+      var string = XmlService.createElement('string').setText(text);
+      paramArray.addContent(string);
+      if(identifier == "other") {
+        stringArray.addContent(paramArray)
+        paramArray = undefined
+      }
+      continue;
+    }
+    
+    if(stringArray != undefined) {
+      root.addContent(stringArray)
+      stringArray = undefined
+    }
+//    if(identifier != prevIdentifier && prevIdentifier != "") {
+//      root.addContent(stringArray);
+//      stringArray = undefined
+//      prevIdentifier = "";
+//    }
 
-    exportString += '"' + identifier + '" = "' + text + "\";\n";
+    
+    var arrayPosition = identifier.indexOf("[p]");
+    if(arrayPosition > 0) {
+      var arrayIdentifier = identifier.substr(0, arrayPosition)
+      
+      exportString += '"' + arrayIdentifier + '" = "' + text + "\";\n";
+      
+      var key = XmlService.createElement('key').setText(arrayIdentifier);
+      root.addContent(key)
+      
+      stringArray = XmlService.createElement('dict');
+      
+      key = XmlService.createElement('key').setText("NSStringLocalizedFormatKey");
+      stringArray.addContent(key);
+      var string = XmlService.createElement('string').setText(text);
+      stringArray.addContent(string);
+
+//      var item = XmlService.createElement('item').setText(text);
+//      stringArray.addContent(item)
+    } else {
+      exportString += '"' + identifier + '" = "' + text + "\";\n";
+    }
   }
   
-  return exportString;
+  if(stringArray != undefined) {
+    root.addContent(stringArray);
+  }
+  plist.addContent(root);
+
+  var document = XmlService.createDocument(plist);
+  var docType = XmlService.createDocType("plist");
+  docType.setPublicId("-//Apple//DTD PLIST 1.0//EN");
+  docType.setSystemId("http://www.apple.com/DTDs/PropertyList-1.0.dtd")
+  document = document.setDocType(docType);
+  
+//  exportString += "\n" + XmlService.getPrettyFormat().setEncoding('UTF-8').format(document);
+  
+  return [XmlService.getPrettyFormat().setEncoding('UTF-8').format(document), exportString];
 }
 
 
