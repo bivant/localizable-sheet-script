@@ -78,7 +78,7 @@ protocol LocalizableFormat: Localizable { //detected by a "format" suffix in the
 
 extension Localizable {
 	func get(_ comment: String? = nil) -> String {
-		return "use NSLocalizedString or other custom logic like bundle?.localizedString(forKey: key, value: comment, table: nil) ?? key
+		return "use NSLocalizedString or other custom logic like bundle?.localizedString(forKey: key, value: comment, table: nil) ?? key"
 	}
 }
 
