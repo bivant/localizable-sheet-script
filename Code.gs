@@ -145,6 +145,10 @@ function displayTexts_(texts, options) {
 
   for (var i = 0, j = 0; i < texts.length; i++, j++) {
     if(options.language == LANGUAGE_IOS) {
+      if(i == 0) {
+        app.append(makeTextBox("export_" + i, "Enums:", texts[i]))
+        i++;
+      }
       app.append(makeTextBox("export_" + i, headers[j] + " plist", texts[i]))
       i++;
     }
@@ -285,65 +289,40 @@ function makeXmlString(object, textIndex, options) {
 /*
    Creates the Localizable.strings file and a Localizable enum for iOS.
 */
+
+//http://ramblings.mcpher.com/Home/excelquirks/gassnips/es6shim
+var Set = cEs6Shim.Set;
+var Map = cEs6Shim.Map;
+
 function makeIosString(object, textIndex, options) {
 
+  Logger.clear()
   var exportString = "";
-  
-  if (IOS_INCLUDES_LOCALIZABLE_ENUM) {
-  
-    exportString += "// MARK: - Localizable enum\n\n"
-  
-    exportString += "enum Localizable {\n\n"
-          
-    for(var i=0; i<object.length; i++) {
-        
-      var o = object[i];
-      var text = o.texts[textIndex];
-    
-      if (text == undefined || text == "") {
-        continue;
-      }
-    
-      var identifier = o.identifierIos;
-      
-      if (identifier == "") {
-        continue;
-      }
-        
-      exportString += "    /// " + text + "\n";
-      exportString += "    static let " + identifier + " = \"" + identifier + "\"\n\n";
-    }
-    
-    exportString += "}\n\n"
-    exportString += "// MARK: - Strings\n\n";
-  }
   
   var plist = XmlService.createElement('plist').setAttribute('version', "1.0");
   var root = XmlService.createElement('dict');
   var stringArray, paramArray;
+  var iOSConstants = new Map();
+  var iOSConstantToStrings = new Map();
   
   for(var i=0; i<object.length; i++) {
     var o = object[i];
     var identifier = o.identifierIos;
     var text = o.texts[textIndex];
     
-//    exportString += '"DEBUG3=' + identifier + '" = "' + text + "\";\n";
-
-    if(identifier == "") {
+   if(identifier == "" || identifier == undefined) {
       continue;
     }
     
     if (text == undefined || text == "") {
       if (stringArray == undefined) {
+        exportString += returnIfComment(identifier)
         continue;
       } else {
         var arrayPosition = identifier.indexOf("[]")
-//        exportString += '"DEBUG=' + identifier + '" = "' + text + '\";arrayPosition ' + arrayPosition + "\n";
         if(arrayPosition > 0) {
           var formatString = identifier.substr(0, arrayPosition)
           var arrayIdentifier = identifier.substr(arrayPosition + 2)
-          
-//          exportString += 'DEBUG arrayIdentifier = ' + arrayIdentifier + "\n";
           
           var key = XmlService.createElement('key').setText(arrayIdentifier);
           stringArray.addContent(key)
@@ -360,17 +339,25 @@ function makeIosString(object, textIndex, options) {
           paramArray.addContent(string);
           continue;
         } else {
-//        exportString += '"DEBUG2=' + identifier + '" = "' + text + "\";\n";
          //fallthrough 
+          if(paramArray == undefined && stringArray != undefined) {
+            root.addContent(stringArray)
+            stringArray = undefined
+          }
         }
       }
     }
         
     if(typeof text === 'string') {
       text = text.replace(/"/g, "\\\"");
+      text = stringFormatToSwift("", text)
     }
     
     if(paramArray != undefined) {
+      if(text == undefined || text == "") {
+        exportString += returnIfComment(identifier)
+        continue;
+      }
       var key = XmlService.createElement('key').setText(identifier);
       paramArray.addContent(key)
       var string = XmlService.createElement('string').setText(text);
@@ -386,17 +373,14 @@ function makeIosString(object, textIndex, options) {
       root.addContent(stringArray)
       stringArray = undefined
     }
-//    if(identifier != prevIdentifier && prevIdentifier != "") {
-//      root.addContent(stringArray);
-//      stringArray = undefined
-//      prevIdentifier = "";
-//    }
-
     
     var arrayPosition = identifier.indexOf("[p]");
     if(arrayPosition > 0) {
       var arrayIdentifier = identifier.substr(0, arrayPosition)
       
+      if(textIndex === 0) {
+        fillConstants(iOSConstants, arrayIdentifier, iOSConstantToStrings, text)
+      }
       exportString += '"' + arrayIdentifier + '" = "' + text + "\";\n";
       
       var key = XmlService.createElement('key').setText(arrayIdentifier);
@@ -409,10 +393,15 @@ function makeIosString(object, textIndex, options) {
       var string = XmlService.createElement('string').setText(text);
       stringArray.addContent(string);
 
-//      var item = XmlService.createElement('item').setText(text);
-//      stringArray.addContent(item)
     } else {
-      exportString += '"' + identifier + '" = "' + text + "\";\n";
+      if(text != undefined && text !== "") {
+        if(textIndex === 0) {
+          fillConstants(iOSConstants, identifier, iOSConstantToStrings, text)
+        }
+        exportString += '"' + identifier + '" = "' + text + "\";\n";
+      } else {
+        exportString += returnIfComment(identifier)
+      }
     }
   }
   
@@ -429,9 +418,168 @@ function makeIosString(object, textIndex, options) {
   
 //  exportString += "\n" + XmlService.getPrettyFormat().setEncoding('UTF-8').format(document);
   
-  return [XmlService.getPrettyFormat().setEncoding('UTF-8').format(document), exportString];
+  Logger.log("Finishing export")
+//  var iOSEnum = "enum Localize: String, Localizable {\n" + ConstructEnum(iOSConstants, "  ") + "}\n"
+  var resultArray = []
+  if(textIndex === 0) {
+    var iOSEnum = "enum Localized" + ConstructEnum(iOSConstants, "\t", iOSConstantToStrings)
+    resultArray.push(iOSEnum);
+  }
+  resultArray.push(XmlService.getPrettyFormat().setEncoding('UTF-8').format(document))
+  resultArray.push(exportString)
+  return resultArray
 }
 
+function returnIfComment(identifier) {
+  var trimmedIdentifier = identifier.toString().trim();
+  if(trimmedIdentifier.indexOf('/*') == 0 && trimmedIdentifier.indexOf('*/', identifier.length-2) > 0) {
+    return "\n/* " + trimmedIdentifier.substr(2,identifier.length-4) + "*/\n\n";
+  }
+  return "";
+}
+
+function capitalizeFirstLetter(aString) {
+  var firstChar = aString.charAt(0).toUpperCase()
+  if(!isNaN(firstChar)) {
+    firstChar = "_" + firstChar
+  }
+  return firstChar + aString.slice(1).toLowerCase();
+}
+
+function stringToSwiftKey(aString) {
+  var firstChar = aString.charAt(0).toUpperCase()
+  if(!isNaN(firstChar)) {
+    firstChar = "_" + firstChar
+  }
+  return firstChar + aString.slice(1).toLowerCase();
+}
+
+function stringToSwiftValue(aString) {
+  var firstChar = aString.charAt(0)
+  var prefix = ""
+  var lowerCasedString = aString.toLowerCase()
+  if(!isNaN(firstChar)) {
+    prefix = "_"
+  } else if(lowerCasedString === "default") {
+    prefix = "_"
+  }
+  return prefix + lowerCasedString;
+}
+
+
+function stringFormatToSwift(identifier, value) {
+  return value.replace(/([^%]|\b|^|%%)(%{1})(\d+\$){0,1}s{1}/g, "$1$2$3@")
+}
+             
+
+function fillConstants(iOSConstants, identifier, valuesMap, stringValue) {
+
+//  Logger.log("iOSConstants, start:" + Array.from(iOSConstants.keys()))
+  var slicedIdentifier = identifier.split(".")
+  var value = slicedIdentifier[slicedIdentifier.length - 1]
+  var object = iOSConstants;
+  if(value != undefined) {
+    value = stringToSwiftValue(value)
+    var existingObject = object
+    var debugOutput = ""
+    var keysArray = slicedIdentifier.slice(0, -1)
+//    var keysArrayLowercased = slicedIdentifier.slice(0, -1)
+//    var keysArray = Array.from(keysArrayLowercased , function (d) { return d.toUpperCase(); })
+    for(index in keysArray) {
+      var key = stringToSwiftKey(slicedIdentifier[index])
+      existingObject = object.get(key);
+      if(existingObject == undefined) {
+        existingObject = new Map()
+        object.set(key, existingObject)
+        debugOutput += key + "(new),"
+      } else {
+        debugOutput += key + ","
+      }
+      object = existingObject
+    }
+    
+    Logger.log("Got " + identifier + " sliced: " + debugOutput + " == " + keysArray + ", value = " + value)
+    
+//    var objectCopy = object
+//    Logger.log("Equal " + (object === objectCopy).toString() + " type = " + typeof(object))
+    
+//    if(existingObject == undefined) {
+//      existingObject = new Map()
+//      object.set(key, existingObject)
+//    }
+    object.set(value, identifier)
+    valuesMap.set(identifier, stringValue)
+//    Logger.log("Equal after set " + (object === objectCopy).toString() + " object keys: " + Array.from(object.keys()) + " values: " + Array.from(object.values()))
+//    Logger.log("After set object keys: " + Array.from(object.keys()) + " values: " + Array.from(object.values()))
+  }
+//  Logger.log("iOSConstants:" + Array.from(iOSConstants.keys()))
+//  if(slicedIdentifier.length > 1) {
+//    Logger.log("Map value after set(login):  " + iOSConstants.get("login") )
+//    Logger.log("object keys:" + Array.from(object.keys()) + ", values:" + Array.from(object.values()))
+//  }
+}
+
+function ConstructEnum(constantsMap, offset, constantToStrings) {
+
+  if(constantsMap == undefined) {
+    return "{}\n"
+  }
+//  if(typeof(constantsMap) == "string") {
+//    return offset + "static let item = " + constantsMap
+//  }
+  if(typeof(constantsMap) !== "object") {
+    Logger.log("ConstructEnum: unexpected type of constantsMap:" + typeof(constantsMap))
+    return "{}\n"
+  }
+  var enumHasCases = false
+  var enumHasFormats = false
+  var enumContent = ""
+  var keys = Array.from(constantsMap.keys())
+  Logger.log("ConstructEnum for keys array " + Array.from(constantsMap.keys()))
+  for(var index in keys) {
+    var key = keys[index]
+//    if(keysMap.keys().lenght < 10) {
+      Logger.log("ConstructEnum for key " + key + ", value = " + constantsMap.get(key))
+//    }
+    
+    var mapResult = ""
+    var value = constantsMap.get(key)
+    if(typeof(value) === "string") {
+      enumHasCases = true
+      var stringValue = constantToStrings.get(value)
+////      stringValue.replace("(?<ArgumentPosition>([^%]|\b|^|%%)%{1}(\d+\$){0,1})(?<StringCharacter>s{1})", "${ArgumentPosition}@") 
+//      stringValue = stringValue.replace(/([^%]|\b|^|%%)(%{1})(\d+\$){0,1}s{1}/g, "$1$2$3@")
+////      stringValue += " replaced"
+////      stringValue.replace(new RegExp("\w*", 'g'), '$&rep')
+////      stringValue = stringValue.replace(/\w*/g, '$&rep')
+      mapResult = offset + "case " + key + " = \"" + value + "\"\t/*" + stringValue + "*/\n"
+      if(value.endsWith("format")) {
+        enumHasFormats = true
+        
+//        
+      }
+    } else if(typeof(constantsMap) === "object") {
+      var enumObject = constantsMap.get(key)
+      
+      mapResult = offset + "enum " + key + ConstructEnum(constantsMap.get(key), offset + "\t", constantToStrings)
+//      mapResult += offset + "}\n"
+    } else {
+      Logger.log("ConstructEnum: unexpected type of constantsMap:" + typeof(constantsMap))
+    }
+    enumContent += mapResult
+  }
+
+  var resultString = ""
+  if(enumHasCases) {
+    if(enumHasFormats) {
+      resultString = ": String, LocalizableFormat"
+    } else {
+      resultString = ": String, Localizable"
+    }
+  }
+  resultString += " {\n" + enumContent + offset.slice(0, -1) + "}\n"
+  return resultString
+}
 
 // Data fetching
 
