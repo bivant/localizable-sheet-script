@@ -162,7 +162,7 @@ function displayTexts_(texts, options) {
 function makeString(object, textIndex, options) {
   switch (options.language) {
     case LANGUAGE_ANDROID:
-      return makeAndroidString(object, textIndex, options);
+      return makeXmlString(object, textIndex, options);
       break;
     case LANGUAGE_IOS:
       return makeIosString(object, textIndex, options);
@@ -175,85 +175,46 @@ function makeString(object, textIndex, options) {
 /*
    Creates the strings.xml file for Android.
 */
-function makeAndroidString(object, textIndex, options) {
 
-  var exportString = "";
-  var prevIdentifier = "";
-  
-  exportString = '<?xml version="1.0" encoding="UTF-8"?>' + "\n";
-  exportString += "<resources>\n";
-  
-  for(var i=0; i<object.length; i++) {
-    
-    var o = object[i];
-    var identifier = o.identifierAndroid;
-    
-    var text = o.texts[textIndex];
-    
-    if (text == undefined || text == "") {
-      continue;
-    }
-    
-    if(identifier == "") {
-      continue;
-    }
-  
-    if(identifier != prevIdentifier && prevIdentifier != "") {
-      exportString += "\t" + '</string-array>' + "\n";
-      prevIdentifier = "";
-    }
-
-    if(typeof text === 'string') {
-      text = text.replace(/\n/g, "\\n");
-      text = text.replace(/&/g, "&amp;");
-      text = text.replace(/\'/g, "\\'");
-      text = text.replace(/</g, "&lt;");
-      text = text.replace(/>/g, "&gt;");
-      text = text.replace(/"/g, "\\\"");
-    }
-    
-    if(identifier.indexOf("[]")>0) {
-      
-      if(identifier != prevIdentifier) {
-        exportString += "\t" + '<string-array name="' + identifier.substr(0,identifier.length-2) + '">' + "\n";
-      }
-      
-      exportString += "\t\t"+'<item>'+text+'</item>' + "\n";
-      prevIdentifier = identifier;
-      
-    } else {
-      exportString += "\t"+'<string name="'+identifier+'">'+text+'</string>' + "\n";
-    }
-  }
-  if(prevIdentifier != "") {
-    exportString += "\t" + '</string-array>' + "\n";
-  }
-  exportString += "</resources>";
-  
-  return exportString;
-}
-
-function makeAndroidXmlString(object, textIndex, options) {
+function makeXmlString(object, textIndex, options) {
 
   var prevIdentifier = "";
-
+  
   var root = XmlService.createElement('resources');
   var stringArray;
   var pluralArray = undefined;
+  var pluralFormat;
+  var pluralArgument;
   
   for(var i=0; i<object.length; i++) {
-
+    
     var o = object[i];
     var identifier = o.identifierAndroid;
-
+    
     var text = o.texts[textIndex];
-
-    if (text == undefined || text == "") {
-      continue;
-    }
-
+    
+    
     if(identifier == "") {
       continue;
+    }
+    
+//    identifier = identifier.replace(/\./g, "_"); use formula in sheet for the [Identifier Android]:
+//=SUBSTITUTE(B2; "."; "_")
+
+
+    if (text == undefined || text == "") {
+      if(pluralArray == undefined) {
+        continue;
+      } else {
+        var arrayPosition = identifier.indexOf("[]")
+        if(arrayPosition > 0) {
+          var formatString = identifier.substr(0, arrayPosition)
+          var arrayIdentifier = identifier.substr(arrayPosition + 2)
+
+          pluralArgument = arrayIdentifier;
+        }
+        continue;
+      }
     }
 
     if(typeof text === 'string') {
@@ -290,6 +251,7 @@ function makeAndroidXmlString(object, textIndex, options) {
         if(arrayPosition > 0) {
           var arrayIdentifier = identifier.substr(0, arrayPosition)
           pluralArray = XmlService.createElement('plurals').setAttribute('name', arrayIdentifier);
+          pluralFormat = text
         } else {
           var item = XmlService.createElement('string').setAttribute('name', identifier).setText(text);
           
@@ -297,6 +259,8 @@ function makeAndroidXmlString(object, textIndex, options) {
         }
       }
     } else {
+      var replaceCriteria = "%#@" + pluralArgument + "@"
+      var text = pluralFormat.replace(replaceCriteria, text)
       var item = XmlService.createElement('item').setAttribute('quantity', identifier).setText(text);
       pluralArray.addContent(item)
       if(identifier == "other") {
