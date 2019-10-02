@@ -39,11 +39,12 @@ Formatted example:
 
 | **Identifier iOS** | **Identifier Android** | English text |
 | --- | --- | --- |
-distance.format | distance_format| %1$s away |									
+| distance.format | distance_format| %1$s away |									
 
 %s and %1$s are transformed to %@ and %1$@ for iOS by the export script
 
 Plurals example:
+
 | **Identifier iOS** | **Identifier Android** | English text |
 | --- | --- | --- |
 | missions.missions_format[p] | missions_missions_format[p] | You have %#@MISSIONS@ to do |
@@ -59,7 +60,7 @@ Plurals example:
 
  - `NUMBER_OF_LANGUAGES`: The number of language columns to use.
  - `FIRST_COLUMN_POSITION`: The position of the iOS identifiers (the first column relevant to the script). Starting from 1.
- ~~- `IOS_INCLUDES_LOCALIZABLE_ENUM`: Whether or not to create an `Localizable` `enum` containing all of the keys as `static let` constants.~~
+ - ~~`IOS_INCLUDES_LOCALIZABLE_ENUM`: Whether or not to create an `Localizable` `enum` containing all of the keys as `static let` constants.~~
  
 ## Exported files
 
